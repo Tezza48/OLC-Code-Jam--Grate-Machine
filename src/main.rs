@@ -88,7 +88,7 @@ struct Machine {
 
 
 struct MachinePlacementWidget {
-    dir: u8,
+    dir: i8,
     entity: Entity,
     selected_machine: MachineType,
 }
@@ -246,18 +246,35 @@ fn place_random_cubes(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, 
 
 // TODO WT: Make these event triggered, probably a better idea
 fn debug_place_item(
-    // mut commands: Commands,
+    mut commands: Commands,
     mut machine_widget: ResMut<MachinePlacementWidget>,
     sprites: Res<Sprites>,
     kb: Res<Input<KeyCode>>, 
-    // cursor: Res<Cursor>, 
+    cursor: Res<Cursor>, 
     // mut world: ResMut<GridWorld>,
-    query: Query<&mut Handle<ColorMaterial>>,
+    query: Query<(&mut Handle<ColorMaterial>, &mut Rotation)>,
 ) {
     let selected = 
              if kb.just_pressed(KeyCode::Key1) { Some(MachineType::ConveyerBelt) }
         else if kb.just_pressed(KeyCode::Key2) { Some(MachineType::Target(0))}
         else { None };
+
+    let mut update_rotation = false;
+    if kb.just_pressed(KeyCode::Q) {
+        machine_widget.dir = (machine_widget.dir + 1) % 4;
+        update_rotation = true;
+    }
+
+    if kb.just_pressed(KeyCode::E) {
+        machine_widget.dir = (machine_widget.dir - 1) % 4;
+        update_rotation = true;
+    }
+
+    if update_rotation {
+        if let Ok(mut rot) = query.get_mut::<Rotation>(machine_widget.entity) {
+            rot.0 = Quat::from_rotation_z(machine_widget.dir as f32 * std::f32::consts::FRAC_PI_2);
+        }
+    }
 
     if let Some(selected) = selected {
         if selected != machine_widget.selected_machine {
@@ -270,6 +287,15 @@ fn debug_place_item(
                 println!("Changing selection");
             }
         }
+    }
+
+    if kb.just_pressed(KeyCode::Return) {
+        let entity = commands.spawn(SpriteComponents {
+            material: sprites.machine[&machine_widget.selected_machine],
+            translation: Translation::new(cursor.pos.x() * CELL_SIZE as f32, cursor.pos.y() * CELL_SIZE as f32, 1.),
+            rotation: Quat::from_rotation_z(machine_widget.dir as f32 * std::f32::consts::FRAC_PI_2).into(),
+            ..Default::default()
+        }).current_entity().unwrap();
     }
 
 
