@@ -22,6 +22,7 @@ struct Sprites {
 }
 
 fn tick_world(
+    mut commands: Commands,
     time: Res<Time>,
     mut world: ResMut<GridWorld>,
     query: Query<(&mut Handle<ColorMaterial>, &mut Rotation)>,
@@ -30,6 +31,7 @@ fn tick_world(
     world.tick_timer.tick(time.delta_seconds);
 
     let mut changes = Vec::new();
+    let mut removals = Vec::new();
 
     if world.tick_timer.finished {
         for (i, object) in world.objects.iter().enumerate() {
@@ -47,10 +49,14 @@ fn tick_world(
                         // object.pos = object.pos.max(Vec2::zero()).min(Vec2::splat(MAX_WORLD_COORD as f32));
                     }
                     MachineType::Target(_) => {
-                        println!("Collected {:?}", &object.kind);
+                        removals.push(object.pos);
                     }
                 }
             }
+        }
+
+        for removal in removals.iter() {
+            world.remove_object(*removal, &mut commands);
         }
 
         for change in changes.iter() {

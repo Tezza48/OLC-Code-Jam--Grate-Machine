@@ -87,13 +87,29 @@ impl GridWorld {
             let machine = &self.machines[i];
             if self.machines[i].pos.x() == location.x() && self.machines[i].pos.y() == location.y() {
                 commands.despawn(machine.entity);
-                drop(machine);
 
                 let last = self.machines.len() - 1;
 
                 self.machines.swap(i, last);
 
                 self.machines.pop();
+
+                return;
+            }
+        }
+    }
+
+    pub fn remove_object(&mut self, location: Vec2, commands: &mut Commands) {
+        for i in 0..self.objects.len() {
+            let object = &self.objects[i];
+            if self.objects[i].pos.x() == location.x() && self.objects[i].pos.y() == location.y() {
+                commands.despawn(object.entity);
+
+                let last = self.objects.len() - 1;
+
+                self.objects.swap(i, last);
+
+                self.objects.pop();
 
                 return;
             }
