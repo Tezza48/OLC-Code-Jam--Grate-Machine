@@ -59,6 +59,16 @@ impl GridWorld {
         true
     }
 
+    fn get_machine_at(&self, location: Vec2) -> Option<&Machine> {
+        for obj in self.machines.iter() {
+            if obj.pos.x() == location.x() && obj.pos.y() == location.y() {
+                return Some(&obj);
+            }
+        }
+
+        return None
+    }
+
     fn get_object_at(&self, location: Vec2) -> Option<&GridObject> {
         for obj in self.objects.iter() {
             if obj.pos.x() == location.x() && obj.pos.y() == location.y() {
@@ -81,9 +91,10 @@ enum MachineType {
 }
 
 struct Machine {
+    dir: i8,
     kind: MachineType,
     pos: Vec2,
-    dir: u8,
+    entity: Entity,
 }
 
 
@@ -110,7 +121,6 @@ fn main() {
         .add_resource(GridWorld::default())
         .add_resource(Sprites::default())
         .add_startup_system(init_scene.system())
-        .add_startup_system(place_random_cubes.system())
         .add_system(update_cursor.system())
         .add_system(debug_place_item.system())
         .add_system(tick_world.system())
@@ -219,31 +229,6 @@ fn init_scene(
 
 }
 
-fn place_random_cubes(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
-    let mesh_handle = meshes.add(shape::Quad {
-        size: Vec2::new(8., 8.),
-        flip: false,
-    }.into());
-
-    let mat = materials.add(Color::GREEN.into());
-
-    for _ in (0..NUM_SCATTERED_QUADS).enumerate() {
-        commands
-            .spawn(PbrComponents {
-                mesh: mesh_handle.clone(),
-                material: mat.clone(),
-                ..Default::default()
-            })
-            .with(
-                Translation::new(
-                    rand::random::<f32>() * (CELL_SIZE * MAX_WORLD_COORD) as f32,
-                    rand::random::<f32>() * (CELL_SIZE * MAX_WORLD_COORD) as f32,
-                    10.0
-                )
-            );
-    }
-}
-
 // TODO WT: Make these event triggered, probably a better idea
 fn debug_place_item(
     mut commands: Commands,
@@ -251,7 +236,7 @@ fn debug_place_item(
     sprites: Res<Sprites>,
     kb: Res<Input<KeyCode>>, 
     cursor: Res<Cursor>, 
-    // mut world: ResMut<GridWorld>,
+    mut world: ResMut<GridWorld>,
     query: Query<(&mut Handle<ColorMaterial>, &mut Rotation)>,
 ) {
     let selected = 
@@ -290,12 +275,21 @@ fn debug_place_item(
     }
 
     if kb.just_pressed(KeyCode::Return) {
-        let entity = commands.spawn(SpriteComponents {
-            material: sprites.machine[&machine_widget.selected_machine],
-            translation: Translation::new(cursor.pos.x() * CELL_SIZE as f32, cursor.pos.y() * CELL_SIZE as f32, 1.),
-            rotation: Quat::from_rotation_z(machine_widget.dir as f32 * std::f32::consts::FRAC_PI_2).into(),
-            ..Default::default()
-        }).current_entity().unwrap();
+        if let None = world.get_machine_at(cursor.pos) {
+            let entity = commands.spawn(SpriteComponents {
+                material: sprites.machine[&machine_widget.selected_machine],
+                translation: Translation::new(cursor.pos.x() * CELL_SIZE as f32, cursor.pos.y() * CELL_SIZE as f32, 1.),
+                rotation: Quat::from_rotation_z(machine_widget.dir as f32 * std::f32::consts::FRAC_PI_2).into(),
+                ..Default::default()
+            }).current_entity().unwrap();
+
+            world.machines.push(Machine {
+                kind: machine_widget.selected_machine,
+                pos: cursor.pos,
+                dir: machine_widget.dir,
+                entity,
+            });
+        }
     }
 
 
