@@ -24,6 +24,7 @@ struct Sprites {
 fn tick_world(
     mut commands: Commands,
     time: Res<Time>,
+    sprites: Res<Sprites>,
     mut world: ResMut<GridWorld>,
     query: Query<(&mut Handle<ColorMaterial>, &mut Rotation)>,
     lerp_query: Query<&mut Translation>,
@@ -31,26 +32,57 @@ fn tick_world(
     world.tick_timer.tick(time.delta_seconds);
 
     let mut changes = Vec::new();
+    let mut transmutes = Vec::new();
     let mut removals = Vec::new();
 
     if world.tick_timer.finished {
+        // machines which create stuff
+
+        // machines which move/change objects
         for (i, object) in world.objects.iter().enumerate() {
             if let Some(machine) = world.get_machine_at(object.pos) {
+                let mut do_move = false;
                 match machine.kind {
                     MachineType::ConveyerBelt => {
-                        let mut delta = if machine.dir == 0 { Vec2::new(1., 0.) } 
-                        else if machine.dir == 1 { Vec2::new(0., 1.) }
-                        else if machine.dir == 2 { Vec2::new(-1., 0.) }
-                        else { Vec2::new(0., -1.) };
-
-                        changes.push((i, delta));
 
                         // object.pos += delta;
                         // object.pos = object.pos.max(Vec2::zero()).min(Vec2::splat(MAX_WORLD_COORD as f32));
+                        do_move = true;
                     }
-                    MachineType::Target(_) => {
+                    MachineType::Target => {
                         removals.push(object.pos);
+                        do_move = false;
                     }
+                    MachineType::Cow => {
+                        do_move = false;
+                    }
+                    MachineType::Milker => {
+
+                    }
+                    MachineType::Grater => {
+                        if object.kind == GridObjectType::Cheese {
+                            transmutes.push((object.pos, GridObjectType::GratedCheese));
+                        }
+                        do_move = true;
+                    }
+                }
+                
+                if do_move {
+                    let mut delta = if machine.dir == 0 { Vec2::new(1., 0.) } 
+                    else if machine.dir == 1 { Vec2::new(0., 1.) }
+                    else if machine.dir == 2 { Vec2::new(-1., 0.) }
+                    else { Vec2::new(0., -1.) };
+    
+                    changes.push((i, delta));
+                }
+            }
+        }
+
+        for transmute in transmutes.iter_mut() {
+            if let Some(object) = world.get_object_at_mut(transmute.0) {
+                object.kind = transmute.1;
+                if let Ok(mut sprite) = query.get_mut::<Handle<ColorMaterial>>(object.entity) {
+                    *sprite = sprites.grid_object[&GridObjectType::GratedCheese];
                 }
             }
         }
@@ -107,10 +139,16 @@ fn init_scene(
 
     sprites.cursor = color_materials.add(asset_server.get_handle("assets/sprites/grid_cell.png").unwrap().into());
     sprites.grid_object.insert(GridObjectType::Cheese, color_materials.add(asset_server.get_handle("assets/sprites/cheese.png").unwrap().into()));
+    sprites.grid_object.insert(GridObjectType::Milk, color_materials.add(asset_server.get_handle("assets/sprites/milk.png").unwrap().into()));
+    sprites.grid_object.insert(GridObjectType::GratedCheese, color_materials.add(asset_server.get_handle("assets/sprites/grated.png").unwrap().into()));
     
-    sprites.machine.insert(MachineType::ConveyerBelt, color_materials.add(asset_server.get_handle("assets/sprites/conveyor.png").unwrap().into()));
-    sprites.machine.insert(MachineType::Target(0), color_materials.add(asset_server.get_handle("assets/sprites/target.png").unwrap().into()));
 
+    sprites.machine.insert(MachineType::ConveyerBelt, color_materials.add(asset_server.get_handle("assets/sprites/conveyor.png").unwrap().into()));
+    sprites.machine.insert(MachineType::Target, color_materials.add(asset_server.get_handle("assets/sprites/target.png").unwrap().into()));
+    sprites.machine.insert(MachineType::Cow, color_materials.add(asset_server.get_handle("assets/sprites/cow.png").unwrap().into()));
+    sprites.machine.insert(MachineType::Grater, color_materials.add(asset_server.get_handle("assets/sprites/grater.png").unwrap().into()));
+    sprites.machine.insert(MachineType::Milker, color_materials.add(asset_server.get_handle("assets/sprites/milking_parlour.png").unwrap().into()));
+    
     sprites.delete = color_materials.add(asset_server.get_handle("assets/sprites/delete.png").unwrap().into());
 
     let widget = commands
@@ -220,7 +258,19 @@ fn debug_place_item(
         }
         else if kb.just_pressed(KeyCode::Key2) {
             made_selection = true;
-            Some(MachineType::Target(0))
+            Some(MachineType::Target)
+        }
+        else if kb.just_pressed(KeyCode::Key3) {
+            made_selection = true;
+            Some(MachineType::Cow)
+        }
+        else if kb.just_pressed(KeyCode::Key4) {
+            made_selection = true;
+            Some(MachineType::Milker)
+        }
+        else if kb.just_pressed(KeyCode::Key5) {
+            made_selection = true;
+            Some(MachineType::Grater)
         }
         else if kb.pressed(KeyCode::Back) { 
             made_selection = true;
@@ -280,6 +330,7 @@ fn debug_place_item(
         }
     }
 
+    // TODO WT: Remove this debug bit
     if kb.just_pressed(KeyCode::Space) {
         // Spawn cheese at cursor
         let object_at = world.get_object_at(cursor.pos);

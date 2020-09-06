@@ -12,7 +12,17 @@ pub struct GridWorld {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum MachineType {
     ConveyerBelt,
-    Target(u8),
+    Target,
+    Cow,
+    Milker,
+    Grater,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum GridObjectType {
+    Cheese,
+    Milk,
+    GratedCheese,
 }
 
 pub struct Machine {
@@ -33,11 +43,6 @@ pub struct GridObject {
     pub kind: GridObjectType,
     pub entity: Entity,
     pub pos: Vec2,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub enum GridObjectType {
-    Cheese = 0x1,
 }
 
 impl Default for GridWorld {
@@ -145,14 +150,4 @@ impl GridWorld {
 
         return None
     }
-}
-
-pub fn get_machine_at<'a>(collection: &'a Vec<Machine>, location: Vec2) -> Option<&'a Machine> {
-    for obj in collection.iter() {
-        if obj.pos.x() == location.x() && obj.pos.y() == location.y() {
-            return Some(obj);
-        }
-    }
-
-    return None
 }
