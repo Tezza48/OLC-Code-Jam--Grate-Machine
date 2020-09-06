@@ -35,9 +35,43 @@ fn tick_world(
     let mut transmutes = Vec::new();
     let mut removals = Vec::new();
     let mut milk_ticks = Vec::new();
+    let mut creates = Vec::new();
 
     if world.tick_timer.finished {
         // machines which create stuff
+        for machine in world.machines.iter() {
+            match machine.kind {
+                MachineType::Milker => {
+                    let pos = machine.pos;
+                    let mut found = false;
+                    println!("Milker");
+                    for y in ((pos.y() - 1.) as u32)..((pos.y() + 1.) as u32) {
+                        for x in ((pos.x() - 1.) as u32)..((pos.x() + 1.) as u32) {
+                            if let Some(machine) = world.get_machine_at(Vec2::new(x as f32, y as f32)) {
+                                if machine.kind == MachineType::Cow {
+                                    found = true;
+                                    println!("Milker found");
+                                }
+                            }
+                            if found { break; }
+                        }
+                        if found { break; }
+                    }
+
+                    if found {
+                        creates.push((GridObjectType::Milk(0), machine.pos));
+                    }
+                }
+                _ => ()
+            }
+        }
+
+        for create in creates.iter() {
+            println!("Milker, instantiate milk");
+            if let None = world.get_object_at(create.1) {
+                world.create_object(create.0, sprites.grid_object[&create.0], create.1, &mut commands)
+            }
+        }
 
         // machines which move/change objects
         for (i, object) in world.objects.iter().enumerate() {
@@ -62,7 +96,7 @@ fn tick_world(
                         do_move = false;
                     }
                     MachineType::Milker => {
-
+                        do_move = true;
                     }
                     MachineType::Grater => {
                         if object.kind == GridObjectType::Cheese {
@@ -115,6 +149,7 @@ fn tick_world(
         }
 
         for change in changes.iter() {
+            if change.0 >= world.objects.len() { continue; }
             if let Some(_) = world.get_object_at(world.objects[change.0].pos + change.1) {
                 continue;
             }
@@ -353,16 +388,16 @@ fn debug_place_item(
         }
     }
 
-    // TODO WT: Remove this debug bit
-    if kb.just_pressed(KeyCode::Space) {
-        // Spawn cheese at cursor
-        let object_at = world.get_object_at(cursor.pos);
-        if let None = object_at {
-            world.create_object(
-                GridObjectType::Milk(0), 
-                sprites.grid_object[&GridObjectType::Milk(0)],
-                cursor.pos,
-                &mut commands);
-        }
-    }
+    // // TODO WT: Remove this debug bit
+    // if kb.just_pressed(KeyCode::Space) {
+    //     // Spawn cheese at cursor
+    //     let object_at = world.get_object_at(cursor.pos);
+    //     if let None = object_at {
+    //         world.create_object(
+    //             GridObjectType::Milk(0), 
+    //             sprites.grid_object[&GridObjectType::Milk(0)],
+    //             cursor.pos,
+    //             &mut commands);
+    //     }
+    // }
 }
