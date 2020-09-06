@@ -1,82 +1,75 @@
 mod cursor;
-use cursor::*;
+mod gameplay;
 
 use std::collections::HashMap;
 use bevy::{
     prelude::*,
-    input::mouse::{MouseWheel, MouseMotion},
-    render::camera::{OrthographicProjection, Camera}, math::Mat2,
+    // input::mouse::{MouseWheel, MouseMotion},
+    // render::camera::{OrthographicProjection, Camera}, math::Mat2,
 };
-use rand::prelude::*;
+// use rand::prelude::*;
+use gameplay::*;
+use cursor::*;
 
-pub const MAX_WORLD_COORD: u32 = 63;
-pub const CELL_SIZE: u32 = 32;
-const NUM_SCATTERED_QUADS: u32 = 256;
+const LERP_SPEED: f32 = 5.0;
 
 #[derive(Default)]
 struct Sprites {
-    cursor: Option<Handle<ColorMaterial>>,
+    cursor: Handle<ColorMaterial>,
     grid_object: HashMap<GridObjectType, Handle<ColorMaterial>>,
     machine: HashMap<MachineType, Handle<ColorMaterial>>,
-}
-
-struct GridWorld {
-    tick_timer: Timer,
-    machines: Vec<Machine>,
-    objects: Vec<GridObject>,
-}
-
-impl Default for GridWorld {
-    fn default() -> Self {
-        Self {
-            tick_timer: Timer::from_seconds(1.0, true),
-            machines: Default::default(),
-            objects: Default::default(),
-        }
-    }
+    delete: Handle<ColorMaterial>,
 }
 
 fn tick_world(
     time: Res<Time>,
     mut world: ResMut<GridWorld>,
+    query: Query<(&mut Handle<ColorMaterial>, &mut Rotation)>,
+    lerp_query: Query<&mut Translation>,
 ) {
     world.tick_timer.tick(time.delta_seconds);
-    if world.tick_timer.finished {
 
+    let mut changes = Vec::new();
+
+    if world.tick_timer.finished {
+        for (i, object) in world.objects.iter().enumerate() {
+            if let Some(machine) = world.get_machine_at(object.pos) {
+                match machine.kind {
+                    MachineType::ConveyerBelt => {
+                        let mut delta = if machine.dir == 0 { Vec2::new(1., 0.) } 
+                        else if machine.dir == 1 { Vec2::new(0., 1.) }
+                        else if machine.dir == 2 { Vec2::new(-1., 0.) }
+                        else { Vec2::new(0., -1.) };
+
+                        changes.push((i, delta));
+
+                        // object.pos += delta;
+                        // object.pos = object.pos.max(Vec2::zero()).min(Vec2::splat(MAX_WORLD_COORD as f32));
+                    }
+                    MachineType::Target(_) => {
+                        println!("Collected {:?}", &object.kind);
+                    }
+                }
+            }
+        }
+
+        for change in changes.iter() {
+            if let Some(_) = world.get_object_at(world.objects[change.0].pos + change.1) {
+                continue;
+            }
+            world.objects[change.0].pos += change.1;
+            world.objects[change.0].pos = world.objects[change.0].pos.max(Vec2::zero()).min(Vec2::splat(MAX_WORLD_COORD as f32));
+        }
 
         world.tick_timer.reset();
     }
-}
 
-impl GridWorld {
-    fn place_object(&mut self, object: GridObject) -> bool {
-        if let Some(_) = self.get_object_at(object.pos) {
-            return false;
+    for object in world.objects.iter_mut() {
+        if let Ok(mut translation) = lerp_query.get_mut::<Translation>(object.entity) {
+            let target = object.pos * CELL_SIZE as f32;
+            translation.0 = Vec3::lerp(translation.0, Vec3::new(target.x(), target.y(), translation.0.z()), time.delta_seconds * LERP_SPEED);
+            // translation.0 = Vec3::new(target.x(), target.y(), translation.0.z());
         }
-        
-        self.objects.push(object);
-
-        true
-    }
-
-    fn get_machine_at(&self, location: Vec2) -> Option<&Machine> {
-        for obj in self.machines.iter() {
-            if obj.pos.x() == location.x() && obj.pos.y() == location.y() {
-                return Some(&obj);
-            }
-        }
-
-        return None
-    }
-
-    fn get_object_at(&self, location: Vec2) -> Option<&GridObject> {
-        for obj in self.objects.iter() {
-            if obj.pos.x() == location.x() && obj.pos.y() == location.y() {
-                return Some(&obj);
-            }
-        }
-
-        return None
     }
 }
 
@@ -84,42 +77,10 @@ impl GridWorld {
 //     fn
 // }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-enum MachineType {
-    ConveyerBelt,
-    Target(u8),
-}
-
-struct Machine {
-    dir: i8,
-    kind: MachineType,
-    pos: Vec2,
-    entity: Entity,
-}
-
-
-struct MachinePlacementWidget {
-    dir: i8,
-    entity: Entity,
-    selected_machine: MachineType,
-}
-
-struct GridObject {
-    kind: GridObjectType,
-    entity: Entity,
-    pos: Vec2,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-enum GridObjectType {
-    Cheese = 0x1,
-}
-
 fn main() {
     App::build()
         .add_default_plugins()
         .add_resource(GridWorld::default())
-        .add_resource(Sprites::default())
         .add_startup_system(init_scene.system())
         .add_system(update_cursor.system())
         .add_system(debug_place_item.system())
@@ -129,7 +90,6 @@ fn main() {
 
 fn init_scene(
     mut commands: Commands,
-    mut sprites: ResMut<Sprites>,
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>, 
     mut color_materials: ResMut<Assets<ColorMaterial>>,
@@ -137,11 +97,15 @@ fn init_scene(
 ) {
     asset_server.load_asset_folder("assets").unwrap();
 
-    sprites.cursor = Some(color_materials.add(asset_server.get_handle("assets/sprites/grid_cell.png").unwrap().into()));
+    let mut sprites = Sprites::default();
+
+    sprites.cursor = color_materials.add(asset_server.get_handle("assets/sprites/grid_cell.png").unwrap().into());
     sprites.grid_object.insert(GridObjectType::Cheese, color_materials.add(asset_server.get_handle("assets/sprites/cheese.png").unwrap().into()));
     
     sprites.machine.insert(MachineType::ConveyerBelt, color_materials.add(asset_server.get_handle("assets/sprites/conveyor.png").unwrap().into()));
     sprites.machine.insert(MachineType::Target(0), color_materials.add(asset_server.get_handle("assets/sprites/target.png").unwrap().into()));
+
+    sprites.delete = color_materials.add(asset_server.get_handle("assets/sprites/delete.png").unwrap().into());
 
     let widget = commands
         .spawn(SpriteComponents {
@@ -153,7 +117,7 @@ fn init_scene(
     commands.insert_resource(MachinePlacementWidget {
         dir: 0x0,
         entity: widget,
-        selected_machine: MachineType::ConveyerBelt,
+        selected_machine: Some(MachineType::ConveyerBelt),
     });
 
     let camera_entity = commands
@@ -164,7 +128,7 @@ fn init_scene(
     
     let cursor_entity = commands
         .spawn(SpriteComponents {
-            material: sprites.cursor.unwrap().clone(),
+            material: sprites.cursor.clone(),
             ..Default::default()
         })
         .with(Translation::default())
@@ -218,6 +182,9 @@ fn init_scene(
         .with(Rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)));
 
         
+    commands.insert_resource(sprites);
+
+        
     // Grid background
 
     // Conveyer belt sprite
@@ -239,10 +206,20 @@ fn debug_place_item(
     mut world: ResMut<GridWorld>,
     query: Query<(&mut Handle<ColorMaterial>, &mut Rotation)>,
 ) {
+    let mut made_selection = false;
     let selected = 
-             if kb.just_pressed(KeyCode::Key1) { Some(MachineType::ConveyerBelt) }
-        else if kb.just_pressed(KeyCode::Key2) { Some(MachineType::Target(0))}
-        else { None };
+        if kb.just_pressed(KeyCode::Key1) {
+            made_selection = true;
+            Some(MachineType::ConveyerBelt)
+        }
+        else if kb.just_pressed(KeyCode::Key2) {
+            made_selection = true;
+            Some(MachineType::Target(0))
+        }
+        else if kb.pressed(KeyCode::Back) { 
+            made_selection = true;
+            None
+        } else { None };
 
     let mut update_rotation = false;
     if kb.just_pressed(KeyCode::Q) {
@@ -261,55 +238,51 @@ fn debug_place_item(
         }
     }
 
-    if let Some(selected) = selected {
-        if selected != machine_widget.selected_machine {
-            machine_widget.selected_machine = selected;
-
+    if made_selection {
+        if let Some(selected_type) = selected {
+            machine_widget.selected_machine.replace(selected_type);
+    
             println!("Selected {:?}", &selected);
             
             if let Ok(mut sprite) = query.get_mut::<Handle<ColorMaterial>>(machine_widget.entity) {
-                *sprite = sprites.machine[&selected];
-                println!("Changing selection");
+                *sprite = sprites.machine[&selected_type];
+            }
+        } else {
+            machine_widget.selected_machine = None;
+
+            if let Ok(mut sprite) = query.get_mut::<Handle<ColorMaterial>>(machine_widget.entity) {
+                *sprite = sprites.delete;
             }
         }
     }
 
     if kb.just_pressed(KeyCode::Return) {
-        if let None = world.get_machine_at(cursor.pos) {
-            let entity = commands.spawn(SpriteComponents {
-                material: sprites.machine[&machine_widget.selected_machine],
-                translation: Translation::new(cursor.pos.x() * CELL_SIZE as f32, cursor.pos.y() * CELL_SIZE as f32, 1.),
-                rotation: Quat::from_rotation_z(machine_widget.dir as f32 * std::f32::consts::FRAC_PI_2).into(),
-                ..Default::default()
-            }).current_entity().unwrap();
-
-            world.machines.push(Machine {
-                kind: machine_widget.selected_machine,
-                pos: cursor.pos,
-                dir: machine_widget.dir,
-                entity,
-            });
+        let machine_at = world.get_machine_at(cursor.pos);
+        if  let Some(kind) = machine_widget.selected_machine {
+            if let None = machine_at {
+                world.create_machine(
+                    kind,
+                    sprites.machine[&kind],
+                    cursor.pos,
+                    machine_widget.dir,
+                    &mut commands);
+            }
+        } else {
+            if let Some(_) = machine_at {
+                world.remove_machine(cursor.pos, &mut commands);
+            }
         }
     }
 
-
-    // if kb.just_pressed(KeyCode::Key1) {
-    //     // TODO WT: Check that object can be placed here.
-    //     let entity = commands.spawn(SpriteComponents {
-    //         material: sprites.grid_object.get(&GridObjectType::Cheese).unwrap().clone(),
-    //         translation: Translation::new(cursor.pos.x() * CELL_SIZE as f32, cursor.pos.y() * CELL_SIZE as f32, 1.),
-    //         rotation: Quat::from_rotation_z(random::<f32>()).into(),
-    //         ..Default::default()
-    //     }).current_entity().unwrap();
-
-    //     // TODO WT: Make this so the entity can be spawned after the check for whether there's space.
-
-    //     if !world.place_object(GridObject {
-    //         kind: GridObjectType::Cheese,
-    //         entity,
-    //         pos: cursor.pos,
-    //     }) {
-    //         commands.despawn(entity);
-    //     }
-    // }
+    if kb.just_pressed(KeyCode::Space) {
+        // Spawn cheese at cursor
+        let object_at = world.get_object_at(cursor.pos);
+        if let None = object_at {
+            world.create_object(
+                GridObjectType::Cheese, 
+                sprites.grid_object[&GridObjectType::Cheese],
+                cursor.pos,
+                &mut commands);
+        }
+    }
 }
