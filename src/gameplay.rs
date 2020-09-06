@@ -21,7 +21,7 @@ pub enum MachineType {
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 pub enum GridObjectType {
     Cheese,
-    Milk,
+    Milk(u8),
     GratedCheese,
 }
 

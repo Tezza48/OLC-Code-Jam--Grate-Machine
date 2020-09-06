@@ -34,12 +34,17 @@ fn tick_world(
     let mut changes = Vec::new();
     let mut transmutes = Vec::new();
     let mut removals = Vec::new();
+    let mut milk_ticks = Vec::new();
 
     if world.tick_timer.finished {
         // machines which create stuff
 
         // machines which move/change objects
         for (i, object) in world.objects.iter().enumerate() {
+            if let GridObjectType::Milk(_) = object.kind {
+                milk_ticks.push(object.pos);
+            }
+
             if let Some(machine) = world.get_machine_at(object.pos) {
                 let mut do_move = false;
                 match machine.kind {
@@ -78,7 +83,25 @@ fn tick_world(
             }
         }
 
-        for transmute in transmutes.iter_mut() {
+        for milk_tick in milk_ticks.iter() {
+            if let Some(object) = world.get_object_at_mut(*milk_tick) {
+                match object.kind {
+                    GridObjectType::Milk(ticks) => {
+                        if ticks > 5 {
+                            object.kind = GridObjectType::Cheese;
+                            if let Ok(mut sprite) = query.get_mut::<Handle<ColorMaterial>>(object.entity) {
+                                *sprite = sprites.grid_object[&GridObjectType::Cheese];
+                            }
+                        } else {
+                            object.kind = GridObjectType::Milk(ticks + 1);
+                        }
+                    }
+                    _ => ()
+                }
+            }
+        }
+
+        for transmute in transmutes.iter() {
             if let Some(object) = world.get_object_at_mut(transmute.0) {
                 object.kind = transmute.1;
                 if let Ok(mut sprite) = query.get_mut::<Handle<ColorMaterial>>(object.entity) {
@@ -139,7 +162,7 @@ fn init_scene(
 
     sprites.cursor = color_materials.add(asset_server.get_handle("assets/sprites/grid_cell.png").unwrap().into());
     sprites.grid_object.insert(GridObjectType::Cheese, color_materials.add(asset_server.get_handle("assets/sprites/cheese.png").unwrap().into()));
-    sprites.grid_object.insert(GridObjectType::Milk, color_materials.add(asset_server.get_handle("assets/sprites/milk.png").unwrap().into()));
+    sprites.grid_object.insert(GridObjectType::Milk(0), color_materials.add(asset_server.get_handle("assets/sprites/milk.png").unwrap().into()));
     sprites.grid_object.insert(GridObjectType::GratedCheese, color_materials.add(asset_server.get_handle("assets/sprites/grated.png").unwrap().into()));
     
 
@@ -336,8 +359,8 @@ fn debug_place_item(
         let object_at = world.get_object_at(cursor.pos);
         if let None = object_at {
             world.create_object(
-                GridObjectType::Cheese, 
-                sprites.grid_object[&GridObjectType::Cheese],
+                GridObjectType::Milk(0), 
+                sprites.grid_object[&GridObjectType::Milk(0)],
                 cursor.pos,
                 &mut commands);
         }
